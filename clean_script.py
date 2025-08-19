@@ -232,6 +232,8 @@ except FileNotFoundError:
 df_ions.fillna(0.0, inplace=True)
 print("-> Correção: Todos os valores de abundância iônica ausentes foram substituídos por 0.0.")
 
+# Garante que as colunas para a nova fórmula de Nitrogênio existam
+# Se não existirem (o que é o caso), elas são criadas com valor zero.
 required_n_ions = ['N0', 'N+']
 for ion in required_n_ions:
     if ion not in df_ions.columns:
@@ -279,3 +281,62 @@ df_elemental_log.to_csv("abundancias_elementares_LOG.csv", index=False, float_fo
 print("\n-> Tabelas de abundâncias ELEMENTARES (REAL e LOG) salvas com sucesso!")
 print("\nPré-visualização dos resultados (abundâncias elementares reais):")
 print(df_elemental_real.head())
+
+# ==================================================================================
+# --- ETAPA 6:  MÉDIAS DAS EXPOSIÇÕES ---
+# ==================================================================================
+print("\n--- Etapa 6:   Médias das exposições   ---")
+
+def consolidar_resultados(caminho_arquivo_entrada, caminho_arquivo_saida):
+    """
+    Lê um arquivo de resultados (iônico ou elementar), agrupa por objeto base,
+    calcula a média e o desvio padrão, e salva um novo arquivo consolidado.
+    """
+    try:
+        df = pd.read_csv(caminho_arquivo_entrada)
+    except FileNotFoundError:
+        print(f"-> Aviso: Arquivo '{caminho_arquivo_entrada}' não encontrado. Pulando esta consolidação.")
+        return
+
+    # 1. Extrai o nome base do objeto para o agrupamento.
+    # Ex: 'MaC_1-16_1' -> 'MaC_1-16'
+    # A lógica verifica se a última parte após '_' é um número, para não agrupar errado.
+    df['Objeto_Base'] = df['Objeto'].apply(
+        lambda x: x.rsplit('_', 1)[0] if x.rsplit('_', 1)[-1].isdigit() else x
+    )
+
+    # 2. Seleciona apenas as colunas numéricas para os cálculos.
+    colunas_numericas = df.select_dtypes(include=np.number).columns.tolist()
+
+    # 3. Agrupa pelo nome base e calcula a média e o desvio padrão (std).
+    # O .agg() permite aplicar múltiplas funções de uma só vez.
+    df_agrupado = df.groupby('Objeto_Base')[colunas_numericas].agg(['mean', 'std'])
+
+    # 4. 'Achata' os MultiIndex das colunas para um formato mais simples.
+    # Ex: a coluna ('O/H', 'mean') vira 'O/H_mean'
+    df_agrupado.columns = ['_'.join(col).strip() for col in df_agrupado.columns.values]
+    df_agrupado.reset_index(inplace=True)
+
+    # Salva o DataFrame final e consolidado.
+    df_agrupado.to_csv(caminho_arquivo_saida, index=False, float_format='%.4f')
+    print(f"-> Resultados consolidados salvos em: '{caminho_arquivo_saida}'")
+    
+    return df_agrupado
+
+# --- Consolida os resultados IÔNICOS e ELEMENTARES ---
+df_ionico_final = consolidar_resultados(
+    caminho_arquivo_entrada="abundancias_por_objeto_LOG.csv",
+    caminho_arquivo_saida="abundancias_ionicas_CONSOLIDADO.csv"
+)
+
+df_elemental_final = consolidar_resultados(
+    caminho_arquivo_entrada="abundancias_elementares_LOG.csv",
+    caminho_arquivo_saida="abundancias_elementares_CONSOLIDADO.csv"
+)
+
+# --- Exibe uma pré-visualização dos resultados elementares consolidados ---
+if df_elemental_final is not None:
+    print("\nPré-visualização dos resultados elementares consolidados (média e desvio padrão):")
+    print(df_elemental_final.head())
+
+print("\n--- Script finalizado com sucesso! ---")
